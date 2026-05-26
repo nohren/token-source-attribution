@@ -13,10 +13,12 @@ For example, it can isolate the loss gradients wrt species identity embeddings a
 To install the package, run the following command in your terminal:
 
 ```bash
-python -m venv .venv
+python3 -m venv .venv
 source .venv/bin/activate
 
 pip install -e ".[dev]"
+
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu126
 ```
 
 ### Transformer Encoder Model training and evaluation

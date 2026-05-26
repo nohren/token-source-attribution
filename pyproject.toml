@@ -2,12 +2,13 @@
 name = "token-source-attributor"
 version = "0.1.0"
 description = "Token-source-aware attribution tools for transformer models."
-requires-python = ">=3.10"
+requires-python = ">=3.10,<3.13"
 dependencies = [
 ]
 
 [project.optional-dependencies]
 dev = [
+    "numpy",
     "pytest"
 ]
 
