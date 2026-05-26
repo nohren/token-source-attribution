@@ -20,8 +20,12 @@ pip install -e ".[dev]"
 ```
 
 ### Transformer Encoder Model training and evaluation
+A transformer encoder pretrained model and fine tuned classification head was trained based on the biomeGPT paper architecture.
+https://www.biorxiv.org/content/10.64898/2026.01.05.697599v1.full.pdf
 
 #### Data for model training and evaluation
+Uses shotgun metagenomic sequencing data from the human gut microbiome using stool samples from all studies in the curatedMetagenomicData R package. About 27K for the bert masked token prediction task.
+
 Follow this for installation instructions 
 https://github.com/waldronlab/curatedMetagenomicDataTerminal
 

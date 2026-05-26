@@ -17,12 +17,58 @@ is_first_write <- TRUE
 
 cat("Starting extraction of global stool samples for BERT pre-training...\n")
 
+# -----------------------------
+# PASS 1: Build global species vocabulary
+# -----------------------------
+
+all_species <- character()
+
+for (study in target_studies) {
+  se_list <- tryCatch({
+    curatedMetagenomicData(study, dryrun = FALSE, counts = FALSE)
+  }, error = function(e) NULL)
+
+  if (is.null(se_list) || length(se_list) == 0) next
+  se <- se_list[[1]]
+
+  metadata <- as.data.frame(colData(se))
+  if (!"body_site" %in% colnames(metadata)) next
+
+  stool_ids <- metadata %>%
+    tibble::rownames_to_column("sample_id") %>%
+    filter(body_site == "stool") %>%
+    pull(sample_id)
+
+  if (length(stool_ids) == 0) next
+
+  abundance_matrix <- assay(se[, colnames(se) %in% stool_ids, drop = FALSE])
+
+  species_rows <- grep("s__", rownames(abundance_matrix), value = TRUE)
+  species_rows <- species_rows[!grepl("t__", species_rows)]
+
+  # IMPORTANT: keep full MetaPhlAn clade strings as stable feature IDs
+  all_species <- union(all_species, species_rows)
+
+  rm(se, se_list, abundance_matrix)
+  gc(verbose = FALSE)
+}
+
+all_species <- sort(all_species)
+
+cat("Global species vocabulary size:", length(all_species), "\n")
+writeLines(all_species, "species_vocab.txt")
+
+# -----------------------------
+# PASS 2: Align each study to global vocabulary
+# -----------------------------
+
+
 for (i in seq_along(target_studies)) {
   study <- target_studies[i]
   
   se_list <- tryCatch({
     curatedMetagenomicData(study, dryrun = FALSE, counts = FALSE)
-  }, error = function(e) next)
+  }, error = function(e) NULL)
   
   if (is.null(se_list) || length(se_list) == 0) next
   se <- se_list[[1]]
@@ -50,37 +96,60 @@ for (i in seq_along(target_studies)) {
 # --- FIX IS HERE: Subset using colnames() instead of a missing metadata column ---
   se_stool <- se[, colnames(se) %in% stool_ids, drop = FALSE]
 
+  if (ncol(se_stool) == 0) next
+
   abundance_matrix <- assay(se_stool)
   species_rows <- grep("s__", rownames(abundance_matrix), value = TRUE)
   species_rows <- species_rows[!grepl("t__", species_rows)]
 
   if (length(species_rows) == 0) next
   matrix_species <- abundance_matrix[species_rows, , drop = FALSE]
-  rownames(matrix_species) <- sub(".*s__", "", rownames(matrix_species))
-  
-  # 5. Transpose to ML format: Rows = Samples, Columns = Species
-  pivoted_matrix <- t(matrix_species)
-  
-  # Convert explicitly to dataframe, preserving row names cleanly
-  df_pivoted <- as.data.frame(pivoted_matrix)
 
-  # print("pivoted matrix: ")
-  # print(df_pivoted)
-  
-  # Move the Sample IDs out of the row name space into a dedicated first column
-  df_pivoted <- tibble::rownames_to_column(df_pivoted, "Sample_ID")
-  
-  # 6. Stream directly to disk
-  if (is_first_write) {
-    # Write fresh file with headers
-    write.table(df_pivoted, file = output_file, sep = "\t", 
-                row.names = FALSE, col.names = TRUE, quote = FALSE)
-    is_first_write <- FALSE
-  } else {
-    # Append numerical rows to existing file WITHOUT headers
-    write.table(df_pivoted, file = output_file, sep = "\t", 
-                append = TRUE, row.names = FALSE, col.names = FALSE, quote = FALSE)
-  }
+# Keep full clade strings as column keys
+rownames(matrix_species) <- species_rows
+
+# Transpose: rows = samples, columns = species
+pivoted_matrix <- t(matrix_species)
+df_pivoted <- as.data.frame(pivoted_matrix)
+
+# Move Sample IDs into explicit column
+df_pivoted <- tibble::rownames_to_column(df_pivoted, "Sample_ID")
+
+# Add Study ID for debugging/batch analysis
+df_pivoted$Study_ID <- study
+
+# Add missing species columns as zero
+missing_species <- setdiff(all_species, colnames(df_pivoted))
+
+if (length(missing_species) > 0) {
+  df_pivoted[missing_species] <- 0
+}
+
+# Reorder columns to fixed global order
+df_pivoted <- df_pivoted[, c("Study_ID", "Sample_ID", all_species), drop = FALSE]
+
+# Write safely
+if (is_first_write) {
+  write.table(
+    df_pivoted,
+    file = output_file,
+    sep = "\t",
+    row.names = FALSE,
+    col.names = TRUE,
+    quote = FALSE
+  )
+  is_first_write <- FALSE
+} else {
+  write.table(
+    df_pivoted,
+    file = output_file,
+    sep = "\t",
+    append = TRUE,
+    row.names = FALSE,
+    col.names = FALSE,
+    quote = FALSE
+  )
+}
   
   rm(se, se_list, se_stool, abundance_matrix, matrix_species, df_pivoted); gc(verbose = FALSE)
 }
