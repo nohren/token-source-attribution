@@ -5,12 +5,11 @@ from torch.utils.data import DataLoader
 from token_source_attributor.data.dataset import BinnedMicrobiomeDataset
 from token_source_attributor.models.biomgpt import (
     BioMGPTEncoderBackbone,
-    BioMGPTForMaskedAbundanceModeling,
-    mask_nonzero_abundance_bins,
+    BioMGPTForSequenceClassification,
 )
 
 from pathlib import Path
-CHECKPOINT_DIR = Path("checkpoints")
+CHECKPOINT_DIR = Path("checkpoints_classifier")
 
 
 def train():
@@ -39,7 +38,7 @@ def train():
         dropout=0.1,
     )
 
-    model = BioMGPTForMaskedAbundanceModeling(backbone).to(device)
+    model = BioMGPTForSequenceClassification(backbone).to(device)
 
     optimizer = torch.optim.AdamW(
         model.parameters(),
@@ -56,19 +55,21 @@ def train():
             species_ids = batch["species_ids"].to(device)
             abundance_bins = batch["abundance_bins"].to(device)
             attention_mask = batch["attention_mask"].to(device)
+            
+            #TODO classifier head attach, also need labels, need to add a new data loader for that i think
 
-            abundance_bins_masked, mlm_labels, masked_positions = mask_nonzero_abundance_bins(
-                abundance_bins=abundance_bins,
-                mask_bin_id=model.backbone.mask_bin_id,
-                mask_prob=0.25,
-            )
+            # abundance_bins_masked, mlm_labels, masked_positions = mask_nonzero_abundance_bins(
+            #     abundance_bins=abundance_bins,
+            #     mask_bin_id=model.backbone.mask_bin_id,
+            #     mask_prob=0.25,
+            # )
 
-            out = model(
-                species_ids=species_ids,
-                abundance_bins_masked=abundance_bins_masked,
-                attention_mask=attention_mask,
-                mlm_labels=mlm_labels,
-            )
+            # out = model(
+            #     species_ids=species_ids,
+            #     abundance_bins_masked=abundance_bins_masked,
+            #     attention_mask=attention_mask,
+            #     mlm_labels=mlm_labels,
+            # )
 
             loss = out["loss"]
 
@@ -87,7 +88,7 @@ def train():
 
         torch.save(
             model.state_dict(),
-            CHECKPOINT_DIR / f"biomgpt_pretrain_epoch_{epoch + 1}.pt",
+            CHECKPOINT_DIR / f"biomgpt_classify_epoch_{epoch + 1}.pt",
         )
 
 

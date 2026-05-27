@@ -197,7 +197,7 @@ class BioMGPTEncoderBackbone(nn.Module):
 
         return {
             "last_hidden_state": x,       # [B, S+1, D]
-            "cls_state": x[:, 0, :],      # [B, D]
+            "cls_state": x[:, 0, :],      # [B, D] first token in the sequence
             "token_states": x[:, 1:, :],  # [B, S, D]
             "attentions": attentions,
         }
@@ -265,6 +265,7 @@ class BioMGPTForMaskedAbundanceModeling(nn.Module):
             output_attentions=output_attentions,
         )
 
+        # hidden states h_0,h_1, ... , h_t
         token_states = out["token_states"]  # excludes <cls>, [B, S, D]
         pred_bins = self.abundance_head(token_states).squeeze(-1)  # [B, S]
 
@@ -278,6 +279,7 @@ class BioMGPTForMaskedAbundanceModeling(nn.Module):
                     mlm_labels[mask].float(),
                 )
             else:
+                print('MLM labels are none!')
                 loss = torch.tensor(0.0, device=pred_bins.device)
 
         return {
@@ -297,10 +299,25 @@ class BioMGPTForSequenceClassification(nn.Module):
     Use this only after the backbone/foundation model is pretrained.
     """
 
-    def __init__(self, backbone: BioMGPTEncoderBackbone, num_classes: int):
+    def __init__(
+        self,
+        backbone: BioMGPTEncoderBackbone,
+        num_classes: int,
+        classifier_hidden_dim: int | None = None,
+        dropout: float = 0.1,
+    ):
         super().__init__()
         self.backbone = backbone
-        self.classifier = nn.Linear(backbone.d_model, num_classes)
+
+        hidden_dim = classifier_hidden_dim or backbone.d_model
+
+        # nonlinear activation function for nonlinear decision boundaries
+        self.classifier = nn.Sequential(
+            nn.Linear(backbone.d_model, hidden_dim),
+            nn.GELU(),
+            nn.Dropout(dropout),
+            nn.Linear(hidden_dim, num_classes),
+        )
 
     def forward(
         self,
@@ -317,11 +334,14 @@ class BioMGPTForSequenceClassification(nn.Module):
             output_attentions=output_attentions,
         )
 
+        # take [CLS] out of backbone and place into classifier
         logits = self.classifier(out["cls_state"])
 
         loss = None
         if labels is not None:
             loss = F.cross_entropy(logits, labels)
+        else:
+            print("labels are not defined!")
 
         return {
             "loss": loss,
@@ -333,7 +353,8 @@ class BioMGPTForSequenceClassification(nn.Module):
         }
     
 
-#TODO fix this to really mask 25% of nonzero abundance bins, and add tests for edge cases (e.g. all zeros, all nonzeros, very small number of nonzeros, etc.)
+#NOTE, maybe TODO. this is stochastic, for samples with large amount of non zero values we may not get adequate training signal, since this relies on law of large numbers.  Unsure if its a biased or unbiased stochastic algorithm.
+# in the future can change to exact-k sampling if this is biased. if unbiased then keep it.
 def mask_nonzero_abundance_bins(abundance_bins, mask_bin_id, mask_prob=0.25):
     """
     abundance_bins: [B, S], values 0..50

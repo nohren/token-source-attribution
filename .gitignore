@@ -1,5 +1,7 @@
 bert_pretraining_stool_matrix.tsv
 
+checkpoints/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
