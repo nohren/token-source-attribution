@@ -6,7 +6,6 @@ from token_source_attributor.models.biomgpt import mask_nonzero_abundance_bins, 
 def test_masked_nonzero_abundance_bins():
     MASKED_TOKEN = 51
     COVERAGE = 0.25
-    #TODO design a test for this... it is stochastic so would need to think about it
 
     a_bins = torch.tensor([
         [0, 3, 5, 4, 2, 1, 0, 0, 5, 3, 4, 1, 2],

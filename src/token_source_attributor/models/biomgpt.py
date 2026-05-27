@@ -311,7 +311,8 @@ class BioMGPTForSequenceClassification(nn.Module):
 
         hidden_dim = classifier_hidden_dim or backbone.d_model
 
-        # nonlinear activation function for nonlinear decision boundaries
+        # Classification head on top of transformer encoder backbone
+        # receives CLS token representation h_[CLS]
         self.classifier = nn.Sequential(
             nn.Linear(backbone.d_model, hidden_dim),
             nn.GELU(),
@@ -334,11 +335,13 @@ class BioMGPTForSequenceClassification(nn.Module):
             output_attentions=output_attentions,
         )
 
-        # take [CLS] out of backbone and place into classifier
+        # take [CLS] out of backbone and place into classifier as (B, D)
+        # get out logits of shape (B, num_classes)
         logits = self.classifier(out["cls_state"])
 
         loss = None
         if labels is not None:
+            # 2 classes
             loss = F.cross_entropy(logits, labels)
         else:
             print("labels are not defined!")

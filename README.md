@@ -21,16 +21,18 @@ pip install -e ".[dev]"
 pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu126
 ```
 
-### Transformer Encoder Model training and evaluation
-A transformer encoder pretrained model and fine tuned classification head was trained based on the biomeGPT paper architecture.
+### Model - Transformer Encoder Model training and evaluation
+Transformer encoder MLM pretrained model and fine tuned classification head is based on the biomeGPT paper.
 https://www.biorxiv.org/content/10.64898/2026.01.05.697599v1.full.pdf
 
-#### Data for model training and evaluation
-Uses shotgun metagenomic sequencing data from the human gut microbiome using stool samples from all studies in the curatedMetagenomicData R package. About 27K for the bert masked token prediction task.
+#### Data
+Shotgun metagenomic sequencing data profiled by MetaPhlAn (Metagenomic Phylogenetic Analysis) fetched from the curatedMetagenomicData R package. 27K stool samples used to train the transformer encoder model.
 
-Follow this for installation instructions 
-https://github.com/waldronlab/curatedMetagenomicDataTerminal
+Installation instructions for fetching data
 
+1) https://github.com/waldronlab/curatedMetagenomicDataTerminal
+
+2) Run the following script to fetch the data and save it in the correct format for training the transformer encoder model.
 
 ```bash
 chmod +x data/fetch_stool_species.R

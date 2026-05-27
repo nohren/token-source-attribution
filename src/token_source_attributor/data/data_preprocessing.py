@@ -32,13 +32,14 @@ def bin_abundance_file(
     input_file="bert_pretraining_stool_matrix.tsv",
     output_file="bert_pretraining_stool_binned.tsv",
     B=50,
+    drop_columns=["Study_ID", "Sample_ID"],
     chunksize=512,
 ):
     first_write = True
 
     for chunk in pd.read_csv(input_file, sep="\t", chunksize=chunksize):
-        meta = chunk[["Study_ID", "Sample_ID"]]
-        abundance = chunk.drop(columns=["Study_ID", "Sample_ID"])
+        meta = chunk[drop_columns]
+        abundance = chunk.drop(columns=drop_columns)
 
         binned_rows = np.stack([
             bin_microbiome_sample(row.to_numpy(dtype=float), B=B)
@@ -69,7 +70,8 @@ def bin_abundance_file(
 
 
 def main():
-    bin_abundance_file()
+    # reuse for both pretraining and classifier data preprocessing
+    bin_abundance_file("classifier_stool_matrix.tsv", "classifier_stool_binned.tsv", B=50, drop_columns=["Study_ID", "Sample_ID", "Disease", "Label"])
 
 
 if __name__ == "__main__":
