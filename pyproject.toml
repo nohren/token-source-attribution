@@ -8,6 +8,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
+    "captum",
     "numpy",
     "pandas",
     "pytest"

@@ -80,3 +80,6 @@ class BinnedMicrobiomeClassificationDataset(Dataset):
             "disease": row["Disease"],
             "label": label
         }
+        
+def get_species_name(clade_str):
+    return clade_str.split('|')[-1]
