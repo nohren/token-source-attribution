@@ -53,20 +53,33 @@ def train():
     )
 
     # fine tuning the backbone with a classification head on top, initialized with pretrained weights from MLM task
-    backbone_state_dict = torch.load(
-        "checkpoint/biomgpt_mlm_best_backbone.pt",
+    pretrained_state_dict = torch.load(
+        "checkpoints/biomgpt_pretrain_epoch_20.pt",
         map_location=device,
     )
+
+    backbone_state_dict = {
+        key.replace("backbone.", ""): value
+        for key, value in pretrained_state_dict.items()
+        if key.startswith("backbone.")
+    }
 
     backbone.load_state_dict(backbone_state_dict)
 
     model = BioMGPTForSequenceClassification(backbone, num_classes=2).to(device)
 
     optimizer = torch.optim.AdamW(
-        model.parameters(),
-        lr=1e-4,
+        [
+            {"params": model.backbone.parameters(), "lr": 1e-4},
+            {"params": model.classifier.parameters(), "lr": 1e-4},
+        ],
         weight_decay=0.01,
     )
+    
+    # scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+    #     optimizer,
+    #     T_max=30,
+    # )
 
     best_val_loss = float("inf")
 
@@ -95,9 +108,14 @@ def train():
             # calculate the gradient ∇... [∂L/∂w_1, ∂L/∂w_2, ... , ∂L/∂w_T]
             loss.backward()
             # w = w - lr * ∇
+            
+            # ||∇||_2 > 1.0, then clip
+            #torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
             optimizer.step()
 
             total_train_loss += loss.item()
+        
+        #scheduler.step()
 
         # log the average loss for training epoch
         avg_train_loss = total_train_loss / len(train_loader)

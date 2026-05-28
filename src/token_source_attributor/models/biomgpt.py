@@ -139,7 +139,7 @@ class BioMGPTEncoderBackbone(nn.Module):
         )
 
         species_ids = torch.cat([cls_species, species_ids], dim=1)
-        abundance_bins = torch.cat([cls_abundance, abundance_bins], dim=1) #TODO what is abundance_bins here?
+        abundance_bins = torch.cat([cls_abundance, abundance_bins], dim=1) 
 
         if attention_mask is not None:
             cls_mask = torch.ones(
@@ -159,7 +159,8 @@ class BioMGPTEncoderBackbone(nn.Module):
         # Optional but recommended: keep numeric input scale small.
         # paper does not specify this. Possibly optimization if backed by research.
         # abundance_float = abundance_float / float(self.max_bin)
-
+        
+        # convert abundance_bin scalar -> embedding
         abundance_emb = self.abundance_mlp(abundance_float)
 
         return species_emb, abundance_emb

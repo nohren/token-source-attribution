@@ -2,6 +2,7 @@ bert_pretraining_stool_matrix.tsv
 classifier_stool_matrix.tsv
 
 checkpoints/
+checkpoints_classifier/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
