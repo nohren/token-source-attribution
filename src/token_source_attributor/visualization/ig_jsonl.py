@@ -153,7 +153,7 @@ def _build_sample_card_html(
         f"prob_ibd={float(sample['prob_ibd']):.3f} | "
         f"batch={sample['batch_index']}"
     )
-
+    breakpoint()
     return f"""
     <article style="border:1px solid #d8d8d8;border-radius:12px;padding:16px;background:#fcfcfc;">
       <div style="margin-bottom:10px;">
@@ -161,10 +161,10 @@ def _build_sample_card_html(
         <div style="color:#555;font-size:13px;">{metadata}</div>
       </div>
       <div style="display:grid;gap:10px;">
-        {_build_metric_row_html('Chart 1: Total IG', top_tokens, species_vocab, 'ig_species_plus_abundance', (196, 30, 58))}
-        {_build_metric_row_html('Chart 1: Attention', top_tokens, species_vocab, 'cls_score', (37, 99, 235))}
-        {_build_metric_row_html('Chart 2: Species IG', top_tokens, species_vocab, 'ig_species', (36, 138, 61))}
-        {_build_metric_row_html('Chart 2: Abundance IG', top_tokens, species_vocab, 'ig_abundance', (126, 34, 206))}
+        {_build_metric_row_html('Chart 1: Total IG', top_tokens, species_vocab, 'ig_species_plus_abundance', use_diverging_ig_scale=True)}
+        {_build_metric_row_html('Chart 1: Attention', top_tokens, species_vocab, 'cls_score', rgb=(37, 99, 235))}
+        {_build_metric_row_html('Chart 2: Species IG', top_tokens, species_vocab, 'ig_species', use_diverging_ig_scale=True)}
+        {_build_metric_row_html('Chart 2: Abundance IG', top_tokens, species_vocab, 'ig_abundance', use_diverging_ig_scale=True)}
       </div>
     </article>
     """
@@ -175,7 +175,8 @@ def _build_metric_row_html(
     tokens: list[dict[str, Any]],
     species_vocab: list[str],
     metric_key: str,
-    rgb: tuple[int, int, int],
+    rgb: tuple[int, int, int] = (196, 30, 58),
+    use_diverging_ig_scale: bool = False,
 ) -> str:
     max_abs_value = max(abs(float(token[metric_key])) for token in tokens) if tokens else 1.0
     if max_abs_value == 0:
@@ -184,14 +185,18 @@ def _build_metric_row_html(
     token_spans = []
     for token in tokens:
         value = float(token[metric_key])
-        intensity = abs(value) / max_abs_value
-        alpha = 0.12 + (0.88 * intensity)
         label = _format_token_label(token, species_vocab)
         tooltip = (
             f"{title}: {value:.5f} | "
             f"species_ig={float(token['ig_species']):.5f} | "
             f"abundance_ig={float(token['ig_abundance']):.5f} | "
             f"attention={float(token['cls_score']):.5f}"
+        )
+        background_style = _get_token_background_style(
+            value=value,
+            max_abs_value=max_abs_value,
+            rgb=rgb,
+            use_diverging_ig_scale=use_diverging_ig_scale,
         )
 
         token_spans.append(
@@ -202,7 +207,7 @@ def _build_metric_row_html(
                     margin:4px 6px 4px 0;
                     padding:4px 8px;
                     border-radius:999px;
-                    background:rgba({rgb[0]}, {rgb[1]}, {rgb[2]}, {alpha:.3f});
+                    background:{background_style};
                     color:#111;
                     font-family:monospace;
                     font-size:12px;
@@ -219,6 +224,27 @@ def _build_metric_row_html(
       <div>{''.join(token_spans)}</div>
     </div>
     """
+
+
+def _get_token_background_style(
+    value: float,
+    max_abs_value: float,
+    rgb: tuple[int, int, int],
+    use_diverging_ig_scale: bool,
+) -> str:
+    intensity = abs(value) / max_abs_value
+
+    if use_diverging_ig_scale:
+        if value > 0:
+            alpha = 0.88 * intensity
+            return f"rgba(196, 30, 58, {alpha:.3f})"
+        if value < 0:
+            alpha = 0.88 * intensity
+            return f"rgba(36, 138, 61, {alpha:.3f})"
+        return "rgba(255, 255, 255, 0.000)"
+
+    alpha = 0.12 + (0.88 * intensity)
+    return f"rgba({rgb[0]}, {rgb[1]}, {rgb[2]}, {alpha:.3f})"
 
 
 def _format_token_label(token: dict[str, Any], species_vocab: list[str]) -> str:
