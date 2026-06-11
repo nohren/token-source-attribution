@@ -39,6 +39,7 @@ model.load_state_dict(
 # just use the first batch
 batch = next(iter(loader))
 
+# captum attached forward
 result = saliency_ibd_batch(
     model=model,
     batch=batch,
@@ -46,16 +47,24 @@ result = saliency_ibd_batch(
     target_class=1,  # IBD logit
 )
 
-species_attr = result["species_attr"]       # [B, S]
-abundance_attr = result["abundance_attr"]   # [B, S]
-total_attr = result["total_attr"]           # [B, S]
+species_attr_mag = result["species_attr_mag"]       # [B, S]
+abundance_attr_mag = result["abundance_attr_mag"]   # [B, S]
+total_attr_mag = result["total_attr_mag"]           # [B, S]
+
+species_attr_signed = result["species_attr_signed"]       # [B, S]
+abundance_attr_signed = result["abundance_attr_signed"]   # [B, S]
+total_attr_signed = result["total_attr_signed"]           # [B, S]
 
 # generate top k attr per sample in batch [B,S]
 top_k = 5 
-values, indices = total_attr.topk(top_k, dim=1)
+#mag
+values_mag, indices_mag = total_attr_mag.topk(top_k, dim=1)
+#signed
+values_signed, indices_signed = total_attr_signed.topk(top_k, dim=1)
+
 
 # iterate over all samples in the batch
-for b in range(indices.size(0)):
+for b in range(indices_mag.size(0)):
     print("=" * 80)
     print("sample_id:", batch["sample_id"][b])
     print("study_id:", batch["study_id"][b])
@@ -68,10 +77,10 @@ for b in range(indices.size(0)):
     print("entropy:", result["entropy"][b].item())
     
     
-    print("\nTop species by saliency toward IBD logit:")
+    print("\nTop species by magnitude saliency toward IBD logit:")
     # for this sample in this batch list out the top 5 species by saliency
     for rank in range(top_k):
-        species_idx = indices[b, rank].item()
+        species_idx = indices_mag[b, rank].item()
         species_clade_name = dataset.species_cols[species_idx]
         bin_value = batch["abundance_bins"][b, species_idx].item()
 
@@ -79,7 +88,23 @@ for b in range(indices.size(0)):
             rank + 1,
             get_species_name(species_clade_name),
             "bin=", bin_value,
-            "\nspecies_attr=", species_attr[b, species_idx].item(),
-            "abundance_attr=", abundance_attr[b, species_idx].item(),
-            "\ntotal_attr=", total_attr[b, species_idx].item(),
+            "\nspecies_attr_mag=", species_attr_mag[b, species_idx].item(),
+            "abundance_attr_mag=", abundance_attr_mag[b, species_idx].item(),
+            "\ntotal_attr_mag=", total_attr_mag[b, species_idx].item(),
+        )
+    
+    print("\nTop species by signed saliency toward IBD logit:")
+    # for this sample in this batch list out the top 5 species by saliency
+    for rank in range(top_k):
+        species_idx = indices_signed[b, rank].item()
+        species_clade_name = dataset.species_cols[species_idx]
+        bin_value = batch["abundance_bins"][b, species_idx].item()
+
+        print(
+            rank + 1,
+            get_species_name(species_clade_name),
+            "bin=", bin_value,
+            "\nspecies_attr_signed=", species_attr_signed[b, species_idx].item(),
+            "abundance_attr_signed=", abundance_attr_signed[b, species_idx].item(),
+            "\ntotal_attr_signed=", total_attr_signed[b, species_idx].item(),
         )

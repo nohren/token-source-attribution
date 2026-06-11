@@ -3,6 +3,8 @@ classifier_stool_matrix.tsv
 
 checkpoints/
 checkpoints_classifier/
+tests/test_IG_embeddings/
+
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
@@ -14,6 +16,15 @@ __pycache__/
 
 # macOS
 .DS_Store
+
+#.jsonl
+*.json
+*.jsonl
+
+# model weight / tensor storage files
+*.pt
+
+
 
 # Distribution / packaging
 .Python
