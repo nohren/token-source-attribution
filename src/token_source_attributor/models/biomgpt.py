@@ -168,6 +168,27 @@ class BioMGPTEncoderBackbone(nn.Module):
     def compose_token_embedding(self, species_emb, abundance_emb):
         return self.species_ln(species_emb) + self.abundance_ln(abundance_emb)
 
+    def aggregate_cls_attention(self, attentions):
+        """
+        Average the [CLS] attention row across all layers and heads.
+
+        Args:
+            attentions: list of per-layer attention tensors, each [B, H, T, T]
+
+        Returns:
+            Tensor of shape [B, T-1] containing averaged [CLS] attention
+            to non-CLS tokens.
+        """
+        if not attentions:
+            return None
+
+        stacked_attentions = torch.stack(attentions, dim=0)  # [L, B, H, T, T]
+        cls_attention = stacked_attentions[:, :, :, 0, :]    # [L, B, H, T]
+        cls_attention = cls_attention.mean(dim=2)            # [L, B, T]
+        cls_attention = cls_attention.mean(dim=0)            # [B, T]
+
+        return cls_attention[:, 1:]
+
     def forward_from_components(
         self,
         species_emb,
@@ -195,12 +216,14 @@ class BioMGPTEncoderBackbone(nn.Module):
                 attentions.append(attn)
 
         x = self.final_ln(x)
+        cls_attention = self.aggregate_cls_attention(attentions)
 
         return {
             "last_hidden_state": x,       # [B, S+1, D]
             "cls_state": x[:, 0, :],      # [B, D] first token in the sequence
             "token_states": x[:, 1:, :],  # [B, S, D]
             "attentions": attentions,
+            "cls_attention": cls_attention,
         }
 
     def forward(
@@ -290,6 +313,7 @@ class BioMGPTForMaskedAbundanceModeling(nn.Module):
             "cls_state": out["cls_state"],
             "token_states": out["token_states"],
             "attentions": out["attentions"],
+            "cls_attention": out["cls_attention"],
         }
 
 
@@ -354,6 +378,7 @@ class BioMGPTForSequenceClassification(nn.Module):
             "cls_state": out["cls_state"],
             "token_states": out["token_states"],
             "attentions": out["attentions"],
+            "cls_attention": out["cls_attention"],
         }
     
 

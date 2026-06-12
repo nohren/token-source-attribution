@@ -68,7 +68,7 @@ def saliency_ibd_batch(model, batch, device, target_class=1):
 
     # captum forward pass
     species_attr_full, abundance_attr_full = saliency.attribute(
-        inputs=(species_emb, abundance_emb),
+        inputs=(species_emb, abundance_emb), abs=False
     )
 
     # 5. Drop CLS token
@@ -79,9 +79,15 @@ def saliency_ibd_batch(model, batch, device, target_class=1):
     # abs() because saliency is gradient magnitude-ish; first pass: "how sensitive"
     
     # For directional attribution later, can use signed gradients:
-    species_attr = species_attr_full.abs().sum(dim=-1)       # [B, S]
-    abundance_attr = abundance_attr_full.abs().sum(dim=-1)   # [B, S]
-    total_attr = species_attr + abundance_attr               # [B, S]
+    species_attr_mag = species_attr_full.abs().sum(dim=-1)       # [B, S]
+    abundance_attr_mag = abundance_attr_full.abs().sum(dim=-1)   # [B, S]
+    total_attr_mag = species_attr_mag + abundance_attr_mag              # [B, S]
+    
+    # directional (signed)
+    species_attr_signed = species_attr_full.sum(dim=-1)        # [B, S]
+    abundance_attr_signed = abundance_attr_full.sum(dim=-1)
+    # signed total
+    total_attr_signed = species_attr_signed + abundance_attr_signed
     
     # 7. Also return inference metrics
     with torch.no_grad():
@@ -90,9 +96,11 @@ def saliency_ibd_batch(model, batch, device, target_class=1):
             abundance_bins=batch["abundance_bins"].to(device),
             attention_mask=batch["attention_mask"].to(device),
             labels=labels,
+            output_attentions=True,
         )
         
         logits = out["logits"]
+        cls_attention = out["cls_attention"]
         probs = torch.softmax(logits, dim=1)
         preds = logits.argmax(dim=1)
         confidence = probs.max(dim=1).values
@@ -109,10 +117,14 @@ def saliency_ibd_batch(model, batch, device, target_class=1):
             
         # results are per batch inference
         return {
-            "species_attr": species_attr,       # [B, S]
-            "abundance_attr": abundance_attr,   # [B, S]
-            "total_attr": total_attr,           # [B, S]
+            "species_attr_mag": species_attr_mag,       # [B, S]
+            "abundance_attr_mag": abundance_attr_mag,   # [B, S]
+            "total_attr_mag": total_attr_mag,           # [B, S]
+            "species_attr_signed": species_attr_signed,       # [B, S]
+            "abundance_attr_signed": abundance_attr_signed,   # [B, S]
+            "total_attr_signed": total_attr_signed,           # [B, S]
             "logits": logits,
+            "cls_attention": cls_attention,                  # [B, S]
             "probs": probs,
             "preds": preds,
             "confidence": confidence,
