@@ -4,7 +4,7 @@ import html
 import json
 import random
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 def display_random_tp_tn_token_charts(
     jsonl_path: str | Path = "tests/test_IG_output.jsonl",
@@ -19,11 +19,62 @@ def display_random_tp_tn_token_charts(
         jsonl_path=jsonl_path,
         samples_per_class=samples_per_class,
         seed=seed,
+        sample_filter=None,
     )
     dashboard_html = _build_dashboard_html(
         sampled_records=sampled_records,
         species_vocab=species_vocab,
-        top_k=top_k,
+        title="Random TP/TN IG Token Visualizations",
+        description=(
+            f"Each sample shows the top {top_k} tokens sorted by abundance. "
+            "Color intensity is normalized within each row."
+        ),
+        token_selector=lambda sample: _select_top_tokens(sample["tokens"], top_k=top_k),
+    )
+
+    if display_output:
+        from IPython.display import HTML, display
+
+        display(HTML(dashboard_html))
+
+    return {
+        "true_positive": sampled_records["true_positive"],
+        "true_negative": sampled_records["true_negative"],
+        "html": dashboard_html,
+    }
+
+
+def display_random_monotonic_abundance_token_charts(
+    jsonl_path: str | Path = "tests/test_IG_output.jsonl",
+    species_vocab_path: str | Path = "src/token_source_attributor/data/species_vocab.txt",
+    samples_per_class: int = 3,
+    seed: int | None = None,
+    display_output: bool = True,
+) -> dict[str, Any]:
+    abundance_sequence = [5, 4, 3, 2, 1, 0, 0, 0, 0, 0]
+    species_vocab = _load_species_vocab(species_vocab_path)
+    sampled_records = _sample_records_by_prediction_type(
+        jsonl_path=jsonl_path,
+        samples_per_class=samples_per_class,
+        seed=seed,
+        sample_filter=lambda sample: _sample_matches_abundance_sequence(
+            sample["tokens"],
+            abundance_sequence,
+        ),
+    )
+    dashboard_html = _build_dashboard_html(
+        sampled_records=sampled_records,
+        species_vocab=species_vocab,
+        title="Random Monotonic-Abundance IG Token Visualizations",
+        description=(
+            "Each sample shows 10 tokens selected in abundance order "
+            "[5, 4, 3, 2, 1, 0, 0, 0, 0, 0]. "
+            "Color intensity is normalized within each row."
+        ),
+        token_selector=lambda sample: _select_tokens_by_abundance_sequence(
+            sample["tokens"],
+            abundance_sequence,
+        ),
     )
 
     if display_output:
@@ -47,6 +98,7 @@ def _sample_records_by_prediction_type(
     jsonl_path: str | Path,
     samples_per_class: int,
     seed: int | None,
+    sample_filter: Callable[[dict[str, Any]], bool] | None,
 ) -> dict[str, list[dict[str, Any]]]:
     rng = random.Random(seed)
     reservoirs = {
@@ -72,6 +124,8 @@ def _sample_records_by_prediction_type(
                 prediction_type = sample.get("prediction_type")
                 if prediction_type not in reservoirs:
                     continue
+                if sample_filter is not None and not sample_filter(sample):
+                    continue
 
                 seen_counts[prediction_type] += 1
                 kept_sample = {
@@ -94,16 +148,22 @@ def _sample_records_by_prediction_type(
 def _build_dashboard_html(
     sampled_records: dict[str, list[dict[str, Any]]],
     species_vocab: list[str],
-    top_k: int,
+    title: str,
+    description: str,
+    token_selector: Callable[[dict[str, Any]], list[dict[str, Any]]],
 ) -> str:
     sections = []
-    for prediction_type, title in (
+    for prediction_type, section_title in (
         ("true_positive", "True Positive"),
         ("true_negative", "True Negative"),
     ):
         cards = sampled_records[prediction_type]
         card_html = "".join(
-            _build_sample_card_html(sample=sample, species_vocab=species_vocab, top_k=top_k)
+            _build_sample_card_html(
+                sample=sample,
+                species_vocab=species_vocab,
+                selected_tokens=token_selector(sample),
+            )
             for sample in cards
         )
         if not card_html:
@@ -112,7 +172,7 @@ def _build_dashboard_html(
         sections.append(
             f"""
             <section style="margin-bottom:32px;">
-              <h2 style="margin:0 0 12px 0;font-family:sans-serif;">{title}</h2>
+              <h2 style="margin:0 0 12px 0;font-family:sans-serif;">{section_title}</h2>
               <div style="display:grid;gap:16px;">{card_html}</div>
             </section>
             """
@@ -121,10 +181,8 @@ def _build_dashboard_html(
     return f"""
     <div style="font-family:sans-serif;line-height:1.5;">
       <div style="margin-bottom:20px;">
-        <h1 style="margin:0 0 6px 0;">Random TP/TN IG Token Visualizations</h1>
-        <p style="margin:0;color:#555;">
-          Each sample shows the top {top_k} tokens sorted by abundance. Color intensity is normalized within each row.
-        </p>
+        <h1 style="margin:0 0 6px 0;">{html.escape(title)}</h1>
+        <p style="margin:0;color:#555;">{html.escape(description)}</p>
       </div>
       {''.join(sections)}
     </div>
@@ -134,17 +192,8 @@ def _build_dashboard_html(
 def _build_sample_card_html(
     sample: dict[str, Any],
     species_vocab: list[str],
-    top_k: int,
+    selected_tokens: list[dict[str, Any]],
 ) -> str:
-    top_tokens = sorted(
-        sample["tokens"],
-        key=lambda token: (
-            -int(token["abundance_bin"]),
-            -abs(float(token["ig_species_plus_abundance"])),
-            int(token["token_index"]),
-        ),
-    )[:top_k]
-
     metadata = (
         f"sample={html.escape(str(sample['sample_id']))} | "
         f"study={html.escape(str(sample['study_id']))} | "
@@ -153,7 +202,7 @@ def _build_sample_card_html(
         f"prob_ibd={float(sample['prob_ibd']):.3f} | "
         f"batch={sample['batch_index']}"
     )
-    breakpoint()
+
     return f"""
     <article style="border:1px solid #d8d8d8;border-radius:12px;padding:16px;background:#fcfcfc;">
       <div style="margin-bottom:10px;">
@@ -161,13 +210,69 @@ def _build_sample_card_html(
         <div style="color:#555;font-size:13px;">{metadata}</div>
       </div>
       <div style="display:grid;gap:10px;">
-        {_build_metric_row_html('Chart 1: Total IG', top_tokens, species_vocab, 'ig_species_plus_abundance', use_diverging_ig_scale=True)}
-        {_build_metric_row_html('Chart 1: Attention', top_tokens, species_vocab, 'cls_score', rgb=(37, 99, 235))}
-        {_build_metric_row_html('Chart 2: Species IG', top_tokens, species_vocab, 'ig_species', use_diverging_ig_scale=True)}
-        {_build_metric_row_html('Chart 2: Abundance IG', top_tokens, species_vocab, 'ig_abundance', use_diverging_ig_scale=True)}
+        {_build_metric_row_html('Chart 1: Total IG', selected_tokens, species_vocab, 'ig_species_plus_abundance', use_diverging_ig_scale=True)}
+        {_build_metric_row_html('Chart 1: Attention', selected_tokens, species_vocab, 'cls_score', rgb=(37, 99, 235))}
+        {_build_metric_row_html('Chart 2: Species IG', selected_tokens, species_vocab, 'ig_species', use_diverging_ig_scale=True)}
+        {_build_metric_row_html('Chart 2: Abundance IG', selected_tokens, species_vocab, 'ig_abundance', use_diverging_ig_scale=True)}
       </div>
     </article>
     """
+
+
+def _select_top_tokens(tokens: list[dict[str, Any]], top_k: int) -> list[dict[str, Any]]:
+    return sorted(
+        tokens,
+        key=lambda token: (
+            -int(token["abundance_bin"]),
+            -abs(float(token["ig_species_plus_abundance"])),
+            int(token["token_index"]),
+        ),
+    )[:top_k]
+
+
+def _sample_matches_abundance_sequence(
+    tokens: list[dict[str, Any]],
+    abundance_sequence: list[int],
+) -> bool:
+    abundance_counts: dict[int, int] = {}
+    for token in tokens:
+        abundance_bin = int(token["abundance_bin"])
+        abundance_counts[abundance_bin] = abundance_counts.get(abundance_bin, 0) + 1
+
+    required_counts: dict[int, int] = {}
+    for abundance_bin in abundance_sequence:
+        required_counts[abundance_bin] = required_counts.get(abundance_bin, 0) + 1
+
+    return all(abundance_counts.get(abundance_bin, 0) >= count for abundance_bin, count in required_counts.items())
+
+
+def _select_tokens_by_abundance_sequence(
+    tokens: list[dict[str, Any]],
+    abundance_sequence: list[int],
+) -> list[dict[str, Any]]:
+    remaining_tokens = sorted(
+        tokens,
+        key=lambda token: (
+            -abs(float(token["ig_species_plus_abundance"])),
+            int(token["token_index"]),
+        ),
+    )
+    selected_tokens = []
+    used_token_indices: set[int] = set()
+
+    for abundance_bin in abundance_sequence:
+        for token in remaining_tokens:
+            token_index = int(token["token_index"])
+            if token_index in used_token_indices:
+                continue
+            if int(token["abundance_bin"]) != abundance_bin:
+                continue
+
+            selected_tokens.append(token)
+            used_token_indices.add(token_index)
+            break
+
+    return selected_tokens
 
 
 def _build_metric_row_html(
