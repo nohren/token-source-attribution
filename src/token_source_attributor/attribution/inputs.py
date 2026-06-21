@@ -37,7 +37,7 @@ def ig_inputs_batch(model, batch, device):
         species_ids_with_cls,
         abundance_bins_with_cls,
     )
-    
+ 
     # species embed is always the same since same species_ids always the same input to embedding
     # only thing that changes is abundance embedding
     # those are the actual words/tokens
@@ -50,8 +50,10 @@ def ig_inputs_batch(model, batch, device):
 
     abundance_embed_no_cls = abundance_emb[:,1:,:].detach()
     abundance_baseline_no_cls = abundance_baseline[:,1:,:].detach()
+    species_emb_no_cls = species_emb[:,1:,:].detach()
      
     return {
         "abundance_embed_no_cls": abundance_embed_no_cls,       # [B, S, H]
         "abundance_baseline_no_cls": abundance_baseline_no_cls,   # [B, S, H]
+        "species_emb_no_cls": species_emb_no_cls # [B,S,H]
     }   
