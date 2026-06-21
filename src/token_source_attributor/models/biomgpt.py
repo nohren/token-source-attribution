@@ -125,6 +125,7 @@ class BioMGPTEncoderBackbone(nn.Module):
         '''
         B = species_ids.size(0)
 
+        # create the cls token [B,1] where 1 is cls_species_id
         cls_species = torch.full(
             (B, 1),
             fill_value=self.cls_species_id,
