@@ -170,6 +170,7 @@ for batch_index, batch in enumerate(loader):
         batch_record = {
             "record_type": "batch",
             "batch_index": batch_index,
+            "batch_delta": float(result["batch_delta"].item()), # adding for future baseline analysis table fig comparison
             "num_kept_samples": len(batch_samples),
             "num_true_positive_samples": len(kept_sample_indices_tp),
             "num_true_negative_samples": len(kept_sample_indices_tn),
