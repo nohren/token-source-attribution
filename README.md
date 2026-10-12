@@ -4,32 +4,34 @@
 
 ## The problem
 
-In a feature-tokenized transformer, each token fuses a fixed identity with a sample-specific measurement. Models like this are usually explained by ranking tokens by `[CLS]` attention weight for a given classification task. That has two limits:
+In a feature-tokenized transformer, each token fuses a fixed identity with a sample specific measurement. Models like this are usually explained by ranking tokens by `[CLS]` attention weight for a given classification task. That has two limits:
 
 1. **Attention is unsigned.** A large weight shows that the model *uses* a token, not which class that token supports.
 2. **Attention comes after fusion.** It can't separate the token's sources from its measured value.
 
 ## The model
 
-To study this problem, we re-implemented a [BiomeGPT](https://doi.org/10.64898/2026.01.05.697599)-style model: a BERT-style encoder over microbiome samples. Each of the 1,662 species is a token that combines a species embedding and an abundance embedding:
+To study this problem, a [BiomeGPT](https://doi.org/10.64898/2026.01.05.697599)-style model was re-implemented. It is a BERT-style encoder over microbiome samples. Each of the 1,662 species is a token that combines a species embedding and an abundance embedding:
 
 ```
 t_i = Embed_ID(s_i) + MLP_AB(a_i)        # T = S + A,  bin 0 = absent
 ```
 
-The species embedding `S` is the same in every sample; the abundance embedding `A` is what varies between samples. There are no positional encodings. We pretrained the model on about 27K MetaPhlAn stool samples using **masked abundance reconstruction**, then fine-tuned a `[CLS]` head on 4K IBD vs. 4K healthy samples. It reached about 0.93 validation accuracy. That shows the model learned a signal worth explaining; it is not a clinical benchmark.
+The species embedding `S` is the same in every sample; the abundance embedding `A` is what varies between samples. There are no positional encodings since microbiome species are not ordered. We pretrained the model on about 27K MetaPhlAn stool samples using **masked abundance reconstruction**, then fine-tuned a `[CLS]` head on 4K IBD vs. 4K healthy samples. It reached about 0.93 validation accuracy. That shows the model learned a signal worth explaining (not a clinical benchmark).
 
 ## Approach: signed IG with a source-derived baseline
 
-We use Integrated Gradients to attribute the decision margin `F = z_IBD − z_Healthy`. Positive scores support IBD and negative scores support healthy.
+Integrated Gradients was used to attribute the decision margin `F = z_IBD − z_Healthy`. Positive scores support IBD and negative scores support healthy.
 
-A naive all-zero baseline erases the species identity as well as the abundance. We instead derive the baseline from the token's own sources:
+A naive all zero baseline erases the species identity as well as the abundance. We instead derive the baseline from the token's own sources:
 
 ```
 T′ = S + A₀,   A₀ = MLP_AB(0)      →      T − T′ = A − A₀
 ```
 
-The species identity stays fixed along the whole integration path, and only the abundance moves from zero to its observed value. So `IG_S = 0` by construction, while `S` still conditions every gradient. With additive fusion, IG on the fused token with this baseline equals abundance IG. The same construction carries over to tabular feature-tokenized transformers that add an identity embedding to a value embedding. In preliminary runs it also gave much smaller convergence deltas than the all-zero baseline.
+The species identity stays fixed along the whole integration path, and only the abundance moves from zero to its observed value. So `IG_S = 0` by construction due to factor (S - S), while `S` still conditions every gradient in the forward. With additive fusion, IG on the fused token with this baseline equals abundance IG. The same construction carries over to tabular feature-tokenized transformers that add an identity embedding to a value embedding. 
+
+In preliminary runs it gave a much smaller convergence delta than the all zero baseline, perhaps because the all zero baseline is far out of distribution. More experiments are needed to confirm why that happens.
 
 ```python
 _, A0 = model.backbone.build_source_embeddings(species_ids, torch.zeros_like(abundance_bins))
