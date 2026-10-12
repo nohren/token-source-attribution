@@ -31,7 +31,7 @@ T′ = S + A₀,   A₀ = MLP_AB(0)      →      T − T′ = A − A₀
 
 The species identity stays fixed along the whole integration path, and only the abundance moves from zero to its observed value. So `IG_S = 0` by construction due to factor (S - S), while `S` still conditions every gradient in the forward. With additive fusion, IG on the fused token with this baseline equals abundance IG. The same construction carries over to tabular feature-tokenized transformers that add an identity embedding to a value embedding. 
 
-In preliminary runs it gave a much smaller convergence delta than the all zero baseline, perhaps because the all zero baseline is far out of distribution. More experiments are needed to confirm why that happens.
+In preliminary runs it gave a much smaller convergence delta than the all zero baseline (perhaps because the all zero baseline is far out of distribution?). More experiments are needed to confirm why that happens.
 
 ```python
 _, A0 = model.backbone.build_source_embeddings(species_ids, torch.zeros_like(abundance_bins))
