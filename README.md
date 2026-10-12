@@ -2,118 +2,89 @@
 
 [![arXiv](https://img.shields.io/badge/arXiv-2608.06486-b31b1b.svg)](https://arxiv.org/abs/2608.06486)
 
-This is the code for the paper **[Beyond Attention: Signed Integrated Gradients Attribution in a BiomeGPT-Style Microbiome Transformer](https://arxiv.org/abs/2608.06486)** (Oren Nelson, 2026).
+Code for **[Beyond Attention](https://arxiv.org/abs/2608.06486)**. Oren Nelson, UC San Diego, 2026.
 
-## Overview
+## The problem
 
-BiomeGPT-style microbiome transformers are *feature-tokenized*. Each input token fuses two sources: a fixed **species identity** embedding and a variable **abundance** embedding. People usually interpret these models by reading attention weights, and the paper argues that this has two limitations:
+In a feature-tokenized transformer, each token fuses a fixed identity with a sample-specific measurement. Models like this are usually explained by ranking tokens by `[CLS]` attention weight for a given classification task. That has two limits:
 
-1. **Attention weights are non-negative.** They can't tell a disease-promoting signal apart from a health-supporting one.
-2. **Attention acts after the sources are fused.** It can't say whether a token mattered because of *which* species it is or *how abundant* it is.
+1. **Attention is unsigned.** A large weight shows that the model *uses* a token, not which class that token supports.
+2. **Attention comes after fusion.** It can't separate the token's sources from its measured value.
 
-The paper uses **Integrated Gradients (IG)** with a **source-derived baseline**. The species identity embedding stays fixed, and only the abundance embedding moves toward an absent-species (bin 0) baseline. The target is the log-odds `logit(IBD) − logit(healthy)`, so the attributions are **signed**: positive values push a prediction toward disease and negative values push it toward health. Applied to IBD-versus-healthy classification, this separates pathogenic microbial signals from protective ones, and it shows species–abundance sensitivity patterns that unsigned attention misses. The paper also recommends second-order **Integrated Hessians** for studying how species in a community interact. The method works for any smooth, differentiable feature-tokenized transformer.
+## The model
 
-## Repository contents
+To study this problem, we re-implemented a [BiomeGPT](https://doi.org/10.64898/2026.01.05.697599)-style model: a BERT-style encoder over microbiome samples. Each of the 1,662 species is a token that combines a species embedding and an abundance embedding:
 
 ```
-src/token_source_attributor/
-├── models/biomgpt.py          # BiomeGPT-style encoder: token = LN(species_emb) + LN(abundance_mlp(bin))
-│                              #   + masked-abundance pretraining head and sequence-classification head
-├── data/
-│   ├── fetch_stool_species.R          # pulls MetaPhlAn stool profiles from curatedMetagenomicData (pretraining)
-│   ├── fetch_classification_data.R    # IBD vs. healthy stool samples aligned to the pretraining vocab
-│   ├── data_preprocessing.py          # per-sample rank binning of relative abundance into 50 bins
-│   ├── dataset.py                     # PyTorch datasets
-│   ├── species_vocab.txt              # 1,661-species MetaPhlAn vocabulary
-│   └── *_binned.tsv                   # binned pretraining (~28K samples) and classification (~7.5K) matrices
-├── training/
-│   ├── pretrain_biomgpt.py    # masked nonzero-abundance modeling (foundation model)
-│   ├── classifier_biomgpt.py  # fine-tune IBD vs. healthy classifier from pretrained backbone
-│   └── baseline.py            # predict-the-mean MSE baseline for pretraining
-├── inference/classify.py      # batch classification metrics
-├── attribution/
-│   ├── IG.py                  # signed, source-separated Integrated Gradients (Captum)
-│   ├── saliency.py            # gradient saliency per source
-│   └── inputs.py              # abundance embedding vs. baseline diagnostics
-└── visualization/ig_jsonl.py  # HTML token-level attribution dashboards
-tests/                         # unit tests and attribution runs (pytest)
-visualizations.ipynb           # figures from the paper
-*.png                          # exported figures
+t_i = Embed_ID(s_i) + MLP_AB(a_i)        # T = S + A,  bin 0 = absent
 ```
 
-### How the attribution works
+The species embedding `S` is the same in every sample; the abundance embedding `A` is what varies between samples. There are no positional encodings. We pretrained the model on about 27K MetaPhlAn stool samples using **masked abundance reconstruction**, then fine-tuned a `[CLS]` head on 4K IBD vs. 4K healthy samples. It reached about 0.93 validation accuracy. That shows the model learned a signal worth explaining; it is not a clinical benchmark.
 
-`attribution/IG.py` breaks the model's forward pass apart at the source embeddings:
+## Approach: signed IG with a source-derived baseline
 
-1. `backbone.build_source_embeddings` returns separate species and abundance embeddings, and these become the IG inputs.
-2. `backbone.forward_from_components` composes them (`LN(species) + LN(abundance)`) and runs the encoder.
-3. IG integrates from the baseline `(species_emb, abundance_emb(bin=0))` to the input. Because the species embedding is identical at both ends, its attribution is zero by construction and all of the signal goes to abundance.
-4. Attributions are summed over the hidden dimension, which gives a signed per-species score `[B, S]`. The script also returns the [CLS] attention averaged over layers and heads, so the two can be compared directly.
+We use Integrated Gradients to attribute the decision margin `F = z_IBD − z_Healthy`. Positive scores support IBD and negative scores support healthy.
 
-## Installation
+A naive all-zero baseline erases the species identity as well as the abundance. We instead derive the baseline from the token's own sources:
+
+```
+T′ = S + A₀,   A₀ = MLP_AB(0)      →      T − T′ = A − A₀
+```
+
+The species identity stays fixed along the whole integration path, and only the abundance moves from zero to its observed value. So `IG_S = 0` by construction, while `S` still conditions every gradient. With additive fusion, IG on the fused token with this baseline equals abundance IG. The same construction carries over to tabular feature-tokenized transformers that add an identity embedding to a value embedding. In preliminary runs it also gave much smaller convergence deltas than the all-zero baseline.
+
+```python
+_, A0 = model.backbone.build_source_embeddings(species_ids, torch.zeros_like(abundance_bins))
+ig.attribute(inputs=(S, A), baselines=(S.clone(), A0), ...)   # forward returns z_IBD − z_Healthy
+```
+
+The full implementation is in [`attribution/IG.py`](src/token_source_attributor/attribution/IG.py).
+
+## Results (7,382 samples)
+
+- **Signs line up with the labels.** Mean attribution is positive for true positives (0.0027) and negative for true negatives (−0.0045).
+- **Absent species.** Zero-abundance tokens still get some attention, but their IG is exactly zero.
+- **Heavy attention is not IBD evidence.** The two most-attended species, *S. epidermidis* and *C. massiliensis*, both support the healthy class. Of the top 15 attended species, 4 are among the top 15 health drivers and only 1 among the top 15 IBD drivers.
+- **Sensitivity diagnostics.** The path-averaged gradient `G_A` shows which low-abundance species the model is most sensitive to. These are diagnostics, not attributions.
+- **Response profiles.** How attribution varies with abundance is often non-monotonic and depends on context.
+
+| `[CLS]` attention | IG: IBD drivers | IG: health drivers |
+|---|---|---|
+| ![attention](attn.png) | ![IBD](top_net_species.png) | ![healthy](bottom_net_species.png) |
+
+## Limitations
+
+The results don't show clinical generalization or causality. Each IG score is net evidence along the integration path, so effects of opposite sign can cancel. This work is first-order only. We recommend Integrated Hessians to study interactions between species.
+
+## Usage
+
+Set up the environment:
 
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate
+python3 -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
 pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu126
 ```
 
-## Reproducing the paper
-
-### 1. Data
-
-The data is MetaPhlAn shotgun metagenomic profiles from the [curatedMetagenomicData](https://github.com/waldronlab/curatedMetagenomicDataTerminal) R package. The binned matrices are already in `src/token_source_attributor/data/`. To regenerate them from scratch:
-
-```bash
-Rscript src/token_source_attributor/data/fetch_stool_species.R
-```
-
-```bash
-Rscript src/token_source_attributor/data/fetch_classification_data.R
-```
-
-```bash
-python src/token_source_attributor/data/data_preprocessing.py
-```
-
-### 2. Pretrain the backbone (masked abundance modeling)
+The binned data ships in `src/token_source_attributor/data/`. To rebuild it, run the R scripts and then `data_preprocessing.py`. Pretrain the model:
 
 ```bash
 python -m token_source_attributor.training.pretrain_biomgpt
 ```
 
-This saves checkpoints to `checkpoints/`. The classifier loads `checkpoints/biomgpt_pretrain_epoch_20.pt`.
-
-### 3. Fine-tune the IBD vs. healthy classifier
+Fine-tune the classifier:
 
 ```bash
 python -m token_source_attributor.training.classifier_biomgpt
 ```
 
-This saves the best checkpoint to `checkpoints_classifier/biomgpt_classify_best.pt`.
-
-### 4. Run attribution and make figures
+Run IG:
 
 ```bash
 pytest tests/test_IG.py -s
 ```
 
-Then open `visualizations.ipynb` to reproduce the attention-vs-IG comparisons, the per-species driver plots, and the abundance-sensitivity plots.
-
-## Selected figures
-
-| Attention ([CLS], unsigned) | Signed IG vs. abundance |
-|---|---|
-| ![attention](attn.png) | ![IG vs abundance](IG_vs_abundance.png) |
-
-| Top IBD-driving species | Top health-driving species |
-|---|---|
-| ![top](top_net_species.png) | ![bottom](bottom_net_species.png) |
-
-## Model reference
-
-The architecture and training setup follow BiomeGPT ([bioRxiv 2026.01.05.697599](https://www.biorxiv.org/content/10.64898/2026.01.05.697599v1.full.pdf)). It is an 8-layer, 8-head, d=512 BERT-style encoder over 1,661 species tokens with 50 rank-based abundance bins, pretrained by masking nonzero abundances and then fine-tuned with a [CLS] classification head.
+Then open `visualizations.ipynb` to make the figures.
 
 ## Citation
 
