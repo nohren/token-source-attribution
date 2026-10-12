@@ -1,8 +1,6 @@
 # Beyond Attention: Signed Integrated Gradients Attribution in a BiomeGPT-Style Microbiome Transformer
 
-[![arXiv](https://img.shields.io/badge/arXiv-2608.06486-b31b1b.svg)](https://arxiv.org/abs/2608.06486)
-
-Code for **[Beyond Attention](https://arxiv.org/abs/2608.06486)**. Oren Nelson, UC San Diego, 2026.
+[![arXiv](https://img.shields.io/badge/arXiv-2608.06486-b31b1b.svg)](https://arxiv.org/abs/2608.06486) 
 
 ## The problem
 
